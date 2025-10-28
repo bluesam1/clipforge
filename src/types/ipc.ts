@@ -1,5 +1,45 @@
 // IPC Channel Types and Interfaces
 
+// Video clip data structure
+export interface VideoClip {
+  id: string;
+  filePath: string;
+  fileName: string;
+  duration: number; // in seconds
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+  fileSize: number; // in bytes
+  createdAt: Date;
+  thumbnailPath?: string;
+}
+
+// Video metadata from FFmpeg
+export interface VideoMetadata {
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+  fileSize: number;
+}
+
+// Import result
+export interface ImportResult {
+  success: boolean;
+  clip?: VideoClip;
+  error?: string;
+}
+
+// Batch import result
+export interface BatchImportResult {
+  success: boolean;
+  clips: VideoClip[];
+  errors: string[];
+  totalProcessed: number;
+}
+
 export interface VideoImportRequest {
   filePath: string;
 }
@@ -38,6 +78,9 @@ export interface ExportProgress {
 export const IPC_CHANNELS = {
   PING: 'ping',
   IMPORT_VIDEO: 'import-video',
+  VIDEO_IMPORT_PICKER: 'video-import-picker',
+  VIDEO_IMPORT_DRAGDROP: 'video-import-dragdrop',
+  VIDEO_GET_METADATA: 'video-get-metadata',
   EXPORT_VIDEO: 'export-video',
   EXPORT_PROGRESS: 'export-progress',
   EXPORT_PROGRESS_UPDATE: 'export-progress-update',
