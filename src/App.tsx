@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { ImportButton, Timeline, VideoPreview, ExportButton } from './components';
 import { MediaLibraryProvider, useMediaLibrary } from './contexts/MediaLibraryContext';
+import { TimelineProvider } from './contexts/TimelineContext';
 import { VideoClip } from './types/ipc';
 
 const AppContent: React.FC = () => {
@@ -9,7 +10,7 @@ const AppContent: React.FC = () => {
   const [ipcTestResult, setIpcTestResult] = useState<string>('');
   const [videoSrc, setVideoSrc] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [currentTime] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<number>(0);
@@ -165,16 +166,14 @@ const AppContent: React.FC = () => {
         <div className="mb-8">
           <VideoPreview
             videoSrc={videoSrc}
-            isPlaying={isPlaying}
-            onPlay={handlePlay}
-            onPause={handlePause}
+            onPlayStateChange={(playing) => {
+              setIsPlaying(playing);
+            }}
           />
         </div>
         
         <div className="mb-8">
           <Timeline
-            duration={duration}
-            currentTime={currentTime}
             onClipSelect={handleClipSelect}
           />
         </div>
@@ -200,7 +199,9 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <MediaLibraryProvider>
-      <AppContent />
+      <TimelineProvider>
+        <AppContent />
+      </TimelineProvider>
     </MediaLibraryProvider>
   );
 };
