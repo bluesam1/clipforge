@@ -1,6 +1,8 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { processVideoFile, processVideoFiles } from './utils/videoUtils';
+import { BatchImportResult, VideoMetadata } from './types/ipc';
 
 // Vite environment variables
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -22,6 +24,7 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: false, // Allow local file access for video preview
     },
   });
 
@@ -45,10 +48,11 @@ const createWindow = () => {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' data: blob:; " +
+          "default-src 'self' 'unsafe-inline' data: blob: file:; " +
           "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
           "style-src 'self' 'unsafe-inline'; " +
-          "img-src 'self' data: blob:; " +
+          "img-src 'self' data: blob: file:; " +
+          "media-src 'self' data: blob: file:; " +
           "font-src 'self' data:; " +
           "connect-src 'self' ws: wss:;"
         ]
@@ -62,14 +66,97 @@ ipcMain.handle('ping', () => {
   return 'pong';
 });
 
-// Future IPC handlers for video features
+// Video import handlers
+ipcMain.handle('video-import-picker', async (): Promise<BatchImportResult> => {
+  try {
+    console.log('Video import picker called');
+    const result = await dialog.showOpenDialog({
+      title: 'Select Video Files',
+      filters: [
+        { name: 'Video Files', extensions: ['mp4', 'mov'] },
+        { name: 'All Files', extensions: ['*'] }
+      ],
+      properties: ['openFile', 'multiSelections']
+    });
+
+    console.log('Dialog result:', result);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      console.log('No files selected or dialog canceled');
+      return { 
+        success: false, 
+        clips: [], 
+        errors: ['No files selected'], 
+        totalProcessed: 0 
+      };
+    }
+
+    console.log('Processing files:', result.filePaths);
+    const { clips, errors } = await processVideoFiles(result.filePaths);
+    console.log('Processing result:', { clips: clips.length, errors });
+    
+    return {
+      success: clips.length > 0,
+      clips,
+      errors,
+      totalProcessed: result.filePaths.length
+    };
+  } catch (error) {
+    console.error('Video import error:', error);
+    return {
+      success: false,
+      clips: [],
+      errors: [error instanceof Error ? error.message : 'Unknown error occurred'],
+      totalProcessed: 0
+    };
+  }
+});
+
+ipcMain.handle('video-import-dragdrop', async (event, filePaths: string[]): Promise<BatchImportResult> => {
+  try {
+    const { clips, errors } = await processVideoFiles(filePaths);
+    
+    return {
+      success: clips.length > 0,
+      clips,
+      errors,
+      totalProcessed: filePaths.length
+    };
+  } catch (error) {
+    console.error('Batch video import error:', error);
+    return {
+      success: false,
+      clips: [],
+      errors: [error instanceof Error ? error.message : 'Unknown error occurred'],
+      totalProcessed: 0
+    };
+  }
+});
+
+ipcMain.handle('video-get-metadata', async (event, filePath: string): Promise<VideoMetadata> => {
+  try {
+    const clip = await processVideoFile(filePath);
+    return {
+      duration: clip.duration,
+      width: clip.width,
+      height: clip.height,
+      fps: clip.fps,
+      codec: clip.codec,
+      fileSize: clip.fileSize
+    };
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : 'Failed to get metadata');
+  }
+});
+
+// Legacy IPC handlers for video features
 ipcMain.handle('import-video', async (event, filePath: string) => {
   // TODO: Implement video import logic
   console.log('Import video request:', filePath);
   return { success: true, message: 'Video import not yet implemented' };
 });
 
-ipcMain.handle('export-video', async (event, data: any) => {
+ipcMain.handle('export-video', async (event, data: unknown) => {
   // TODO: Implement video export logic
   console.log('Export video request:', data);
   return { success: true, message: 'Video export not yet implemented' };

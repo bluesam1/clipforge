@@ -288,9 +288,18 @@ sequenceDiagram
 
 ### Frontend
 - **React**: UI component library
-- **TypeScript** (optional): Type safety for faster development
-- **CSS/Tailwind**: Styling
+- **TypeScript**: Type safety for faster development
+- **CSS/Tailwind**: Styling (migration planned in Phase 6)
 - **HTML5 Video Element**: Native video preview
+
+### UI Framework Migration (Phase 6)
+- **Current**: Raw CSS with custom styles in `src/index.css`
+- **Target**: Tailwind CSS utility-first framework
+- **Benefits**: 
+  - Improved maintainability and consistency
+  - Better responsive design capabilities
+  - Smaller bundle size with purged unused styles
+  - Enhanced developer experience
 
 ### Video Processing
 - **FFmpeg**: Industry-standard media processing
@@ -380,6 +389,17 @@ sequenceDiagram
 - Basic error handling
 - Package as distributable
 - Final testing
+
+### Phase 6: UI Framework Migration (Hours 36-42) - Optional Enhancement
+- Install and configure Tailwind CSS with Vite
+- Set up Tailwind configuration for Electron app
+- Convert component styles to Tailwind classes
+- Implement responsive design with Tailwind
+- Add custom Tailwind theme for ClipForge branding
+- Remove old CSS file and clean up styles
+- Test UI consistency across all components
+
+**Note:** Phase 6 is an optional enhancement that can be implemented after MVP completion to modernize the UI styling approach and improve maintainability.
 
 ## Testing Strategy
 

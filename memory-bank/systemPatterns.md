@@ -1,7 +1,7 @@
 # System Patterns: ClipForge
 
 ## Architecture Overview
-ClipForge follows a classic Electron architecture with clear separation between main and renderer processes, using IPC for communication and React for the UI layer.
+ClipForge follows a classic Electron architecture with clear separation between main and renderer processes, using IPC for communication and React for the UI layer. The system successfully implements video import functionality with FFmpeg integration, working video preview with local file access, and Tailwind CSS v4 styling.
 
 ## Key Technical Decisions
 
@@ -24,7 +24,8 @@ Renderer Process (Chromium)
 - **Context Isolation**: Enabled for security
 - **Node Integration**: Disabled in renderer
 - **Preload Script**: Secure IPC bridge
-- **CSP Headers**: Content Security Policy configured
+- **CSP Headers**: Content Security Policy configured with file: protocol support
+- **Web Security**: Disabled to allow local file access for video preview
 
 ### 3. State Management Pattern
 - **MediaLibraryContext**: Manages imported video clips
@@ -49,11 +50,12 @@ ipcMain.handle('import-video', async (event, filePath: string) => {
 
 ### 5. Component Structure
 ```
-App.tsx
+App.tsx (MediaLibraryProvider)
 ├── Toolbar (ImportButton, ExportButton)
 ├── VideoSection (VideoPreview)
 ├── TimelineSection (Timeline)
-└── StatusSection (System Status)
+├── StatusSection (StatusCard)
+└── Error Display (Global error messages)
 ```
 
 ### 6. Data Flow Patterns
@@ -139,7 +141,7 @@ class ErrorBoundary extends React.Component {
 ### Core Components
 - **App**: Main container, orchestrates all components
 - **ImportButton**: Triggers file import flow
-- **VideoPreview**: Displays video content and controls
+- **VideoPreview**: Displays video content with native HTML5 controls and metadata
 - **Timeline**: Shows clips and playhead, handles trim operations
 - **ExportButton**: Initiates export process
 
@@ -155,19 +157,28 @@ src/
 ├── preload.ts           # IPC bridge
 ├── renderer.tsx         # React entry point
 ├── App.tsx              # Main React component
+├── index.css            # Tailwind CSS v4 configuration
 ├── components/          # UI components
-│   ├── ImportButton.tsx
-│   ├── VideoPreview.tsx
-│   ├── Timeline.tsx
-│   └── ExportButton.tsx
+│   ├── ImportButton.tsx     # Video import with drag-drop
+│   ├── VideoPreview.tsx     # Video display with metadata
+│   ├── Timeline.tsx         # Clip timeline display
+│   ├── ExportButton.tsx     # Export functionality
+│   ├── ImportProgress.tsx   # Progress modal for imports
+│   └── index.ts             # Component exports
+├── contexts/            # React contexts
+│   └── MediaLibraryContext.tsx  # Video clip state management
 ├── types/               # TypeScript definitions
-│   └── ipc.ts
-└── contexts/            # React contexts (future)
+│   └── ipc.ts               # IPC interfaces and types
+└── utils/               # Utility functions
+    └── videoUtils.ts        # FFmpeg integration and video processing
 ```
 
 ## Performance Considerations
-- **Video Preview**: Use HTML5 video element for hardware acceleration
+- **Video Preview**: HTML5 video element with hardware acceleration
 - **Timeline Rendering**: DOM-based approach for MVP (not canvas)
-- **State Updates**: Batch updates to avoid excessive re-renders
-- **IPC Calls**: Debounce rapid IPC calls
-- **Memory Management**: Clean up event listeners and intervals
+- **State Updates**: MediaLibraryContext manages clip state efficiently
+- **IPC Calls**: Secure IPC bridge with proper error handling
+- **FFmpeg Integration**: On-demand processing with progress tracking
+- **Tailwind CSS v4**: Optimized Vite plugin for fast HMR
+- **Memory Management**: Context cleanup and event listener management
+- **Build Performance**: Fast development builds with hot reload
