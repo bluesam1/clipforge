@@ -28,10 +28,11 @@ Renderer Process (Chromium)
 - **Web Security**: Disabled to allow local file access for video preview
 
 ### 3. State Management Pattern
-- **MediaLibraryContext**: Manages imported video clips
-- **TimelineContext**: Handles timeline state and playhead
-- **PlayerContext**: Controls playback state
+- **MediaLibraryContext**: Manages imported video clips and clip sequence
+- **TimelineContext**: Handles timeline state, playhead, zoom, and playback
+- **PlayerContext**: Controls playback state (integrated with TimelineContext)
 - **Local State**: Component-specific data
+- **Timeline Sequence**: Maps timeline time to clip positions and local times
 
 ### 4. IPC Communication Pattern
 ```typescript
@@ -71,8 +72,10 @@ App.tsx (MediaLibraryProvider)
 1. User clicks play → Renderer
 2. Renderer starts requestAnimationFrame loop
 3. Loop updates playhead position
-4. VideoPreview seeks to current time
-5. Timeline renders playhead position
+4. TimelineContext maps timeline time to clip and local time
+5. VideoPreview switches to correct clip and seeks to local time
+6. Timeline renders playhead position
+7. Video time updates feed back to timeline position
 
 #### Trim Flow
 1. User drags handle → Renderer
@@ -141,8 +144,9 @@ class ErrorBoundary extends React.Component {
 ### Core Components
 - **App**: Main container, orchestrates all components
 - **ImportButton**: Triggers file import flow
-- **VideoPreview**: Displays video content with native HTML5 controls and metadata
-- **Timeline**: Shows clips and playhead, handles trim operations
+- **VideoPreview**: Displays video content with dynamic clip switching and timeline sync
+- **Timeline**: Shows clips and playhead, handles trim operations and multi-clip positioning
+- **Timeline Components**: ClipBlock, TimeMarkers, Playhead, EmptyState for modular timeline
 - **ExportButton**: Initiates export process
 
 ### Supporting Components
@@ -160,25 +164,37 @@ src/
 ├── index.css            # Tailwind CSS v4 configuration
 ├── components/          # UI components
 │   ├── ImportButton.tsx     # Video import with drag-drop
-│   ├── VideoPreview.tsx     # Video display with metadata
-│   ├── Timeline.tsx         # Clip timeline display
+│   ├── VideoPreview.tsx     # Video display with dynamic clip switching
+│   ├── Timeline.tsx         # Clip timeline display with multi-clip support
+│   ├── ClipBlock.tsx        # Individual clip display component
+│   ├── TimeMarker.tsx       # Timeline time markers
+│   ├── Playhead.tsx         # Timeline playhead component
+│   ├── EmptyState.tsx       # Empty timeline state
 │   ├── ExportButton.tsx     # Export functionality
 │   ├── ImportProgress.tsx   # Progress modal for imports
 │   └── index.ts             # Component exports
 ├── contexts/            # React contexts
-│   └── MediaLibraryContext.tsx  # Video clip state management
+│   ├── MediaLibraryContext.tsx  # Video clip state management
+│   └── TimelineContext.tsx      # Timeline state and playhead management
+├── hooks/               # Custom React hooks
+│   └── useTimeline.ts       # Timeline logic and interactions
 ├── types/               # TypeScript definitions
-│   └── ipc.ts               # IPC interfaces and types
+│   ├── ipc.ts               # IPC interfaces and types
+│   └── timeline.ts          # Timeline-specific types and interfaces
 └── utils/               # Utility functions
-    └── videoUtils.ts        # FFmpeg integration and video processing
+    ├── videoUtils.ts        # FFmpeg integration and video processing
+    └── timelineUtils.ts     # Timeline calculation utilities
 ```
 
 ## Performance Considerations
-- **Video Preview**: HTML5 video element with hardware acceleration
-- **Timeline Rendering**: DOM-based approach for MVP (not canvas)
-- **State Updates**: MediaLibraryContext manages clip state efficiently
+- **Video Preview**: HTML5 video element with hardware acceleration and dynamic source switching
+- **Timeline Rendering**: DOM-based approach for MVP (not canvas) with efficient clip positioning
+- **State Updates**: MediaLibraryContext + TimelineContext manage state efficiently with persistence
 - **IPC Calls**: Secure IPC bridge with proper error handling
 - **FFmpeg Integration**: On-demand processing with progress tracking
 - **Tailwind CSS v4**: Optimized Vite plugin for fast HMR
 - **Memory Management**: Context cleanup and event listener management
 - **Build Performance**: Fast development builds with hot reload
+- **Timeline Performance**: Throttled updates to prevent excessive re-renders
+- **Video Switching**: Efficient clip source changes with seeking protection
+- **Circular Update Prevention**: Ref-based flags to prevent infinite loops
