@@ -112,13 +112,17 @@ const Timeline: React.FC<TimelineProps> = ({
     updatePlayhead({ isDragging: false });
   };
 
+
   const handleTimelineContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Timeline container clicked at (${event.clientX}, ${event.clientY})`);
     handleTimelineClick(event);
   };
 
   const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     handleKeyDown(event);
   };
+
 
   // Calculate clip positions for timeline display using clip sequence
   const getClipPositions = () => {
@@ -227,6 +231,7 @@ const Timeline: React.FC<TimelineProps> = ({
               />
             ))}
           </div>
+
 
           {/* Playhead */}
           <Playhead

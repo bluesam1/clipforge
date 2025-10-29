@@ -218,6 +218,12 @@ const handleTimeUpdate = () => {
 6. **Pending seek effect** → seeks to correct position after video loads
 7. **User interaction flag clears** → allows normal timeupdate updates
 
+### 5. Gap Functionality Removal
+- **Decision**: Removed all gap-related functionality from timeline and video preview
+- **Reason**: Gap indicators were interfering with timeline click responsiveness
+- **Impact**: Simplified timeline interaction logic, improved click reliability
+- **Components Removed**: GapIndicator component, gap detection logic, gap interaction handlers
+
 ## Component Relationships
 
 ### Core Components

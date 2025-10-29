@@ -19,11 +19,13 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   } = useMediaLibrary();
   
   const videoRef = useRef<HTMLVideoElement>(null);
+  const nextVideoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const isSyncingRef = useRef(false); // Single flag to prevent circular updates
   const isVideoSwitchingRef = useRef(false); // Flag to prevent interference during video switches
   const pendingSeekRef = useRef<number | null>(null); // Track pending seek after clip change
   const userInteractingRef = useRef(false); // Flag to prevent timeupdate from overriding user clicks
+  const [preloadedNextClip, setPreloadedNextClip] = useState<string | null>(null);
   
   const {
     state: timelineState,
@@ -34,6 +36,32 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
   // Get current clip from context (single source of truth)
   const currentPlayingClip = getCurrentPlayingClip();
   const actualVideoSrc = videoSrc || (currentPlayingClip ? `file://${currentPlayingClip.filePath}` : '');
+
+  // Preload next clip for smoother transitions
+  useEffect(() => {
+    if (!currentPlayingClip) return;
+
+    const clipSequence = getClipSequence();
+    const currentIndex = clipSequence.items.findIndex(item => item.clip.id === currentPlayingClip.id);
+    
+    if (currentIndex >= 0 && currentIndex < clipSequence.items.length - 1) {
+      const nextClip = clipSequence.items[currentIndex + 1].clip;
+      const nextVideoSrc = `file://${nextClip.filePath}`;
+      
+      if (preloadedNextClip !== nextClip.id) {
+        setPreloadedNextClip(nextClip.id);
+        
+        // Preload the next video
+        if (nextVideoRef.current) {
+          nextVideoRef.current.src = nextVideoSrc;
+          nextVideoRef.current.load();
+          nextVideoRef.current.style.display = 'none';
+        }
+      }
+    } else {
+      setPreloadedNextClip(null);
+    }
+  }, [currentPlayingClip, getClipSequence, preloadedNextClip]);
 
   // 1. Sync video source when current playing clip changes
   useEffect(() => {
@@ -78,6 +106,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
       return;
     }
 
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Timeline position effect triggered - playhead: ${timelineState.playheadPosition.toFixed(2)}s, current clip: ${currentPlayingClip.fileName}`);
+
     const clipSequence = getClipSequence();
     const currentItem = clipSequence.items.find(item => item.clip.id === currentPlayingClip.id);
     
@@ -89,10 +120,11 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
       if (timelineState.playheadPosition >= clipStartTime && timelineState.playheadPosition <= clipEndTime) {
         const localTime = timelineState.playheadPosition - currentItem.startTime;
         
-        // Only seek if difference is significant
-        if (Math.abs(video.currentTime - localTime) > 0.5) {
+        // Only seek if difference is significant (reduced threshold for better responsiveness)
+        const timeDifference = Math.abs(video.currentTime - localTime);
+        if (timeDifference > 0.1) {
           const timestamp = new Date().toISOString();
-          console.log(`[${timestamp}] User selected time - seeking video to ${localTime.toFixed(2)}s (timeline: ${timelineState.playheadPosition.toFixed(2)}s, clip: ${currentPlayingClip.fileName})`);
+          console.log(`[${timestamp}] User selected time - seeking video to ${localTime.toFixed(2)}s (timeline: ${timelineState.playheadPosition.toFixed(2)}s, clip: ${currentPlayingClip.fileName}, diff: ${timeDifference.toFixed(2)}s)`);
           
           // Set user interaction flag to prevent timeupdate from overriding
           userInteractingRef.current = true;
@@ -109,6 +141,9 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
           setTimeout(() => {
             userInteractingRef.current = false;
           }, 500);
+        } else {
+          const timestamp = new Date().toISOString();
+          console.log(`[${timestamp}] Skipping seek - difference too small: ${timeDifference.toFixed(2)}s (video: ${video.currentTime.toFixed(2)}s, target: ${localTime.toFixed(2)}s)`);
         }
       } else {
         const timestamp = new Date().toISOString();
@@ -120,6 +155,7 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
       }
     }
   }, [timelineState.playheadPosition, currentPlayingClip, getClipSequence]);
+
 
   // 2.5. Handle pending seek after video loads
   useEffect(() => {
@@ -400,6 +436,13 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({
           >
             Your browser does not support the video tag.
           </video>
+          
+          {/* Hidden next video for preloading */}
+          <video
+            ref={nextVideoRef}
+            style={{ display: 'none' }}
+            preload="metadata"
+          />
           
           {/* Video Metadata Panel */}
           {currentPlayingClip && (
