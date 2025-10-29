@@ -99,12 +99,17 @@ App.tsx (MediaLibraryProvider)
 6. Project state includes clips with trim data (inPoint/outPoint)
 
 #### Export Flow
-1. User clicks export → Renderer
-2. Renderer → IPC → Main Process
-3. Main Process → FFmpeg command
-4. FFmpeg processes video
-5. Progress updates via IPC
-6. Completion notification
+1. User clicks export button → Opens ExportDialog
+2. User configures resolution and quality → ExportDialog state
+3. User clicks export → Native file save dialog
+4. User selects output location → Returns file path
+5. Renderer builds ExportRequest → IPC → Main Process
+6. Main Process builds FFmpeg command with trim handling
+7. FFmpeg concatenates and encodes clips → Respects inPoint/outPoint
+8. Progress events (percent, time, fps) → IPC → Renderer
+9. ProjectContext updates export state → ExportDialog shows progress
+10. Completion/error → IPC → Renderer → Success/error notification
+11. Dialog shows completion status with close option
 
 ## Design Patterns in Use
 
@@ -373,7 +378,132 @@ const buildClipSequence = (clips: VideoClip[]) => {
 };
 ```
 
-### 7. Project Persistence Patterns
+### 7. Export Patterns
+
+#### Export Request Structure
+```typescript
+interface ExportRequest {
+  clips: Array<{
+    filePath: string;
+    inPoint: number;
+    outPoint: number;
+    duration: number;
+  }>;
+  outputPath: string;
+  options: ExportOptions;
+}
+
+interface ExportOptions {
+  resolution: 'source' | '1080p' | '720p';
+  quality: 'low' | 'medium' | 'high';
+  outputPath: string;
+  filename?: string;
+}
+```
+
+#### FFmpeg Command Building
+```typescript
+const buildExportCommand = (request: ExportRequest) => {
+  let command = ffmpeg();
+  const totalDuration = clips.reduce((sum, clip) => 
+    sum + (clip.outPoint - clip.inPoint), 0);
+  
+  // Add trimmed inputs
+  clips.forEach((clip) => {
+    const trimDuration = clip.outPoint - clip.inPoint;
+    command = command
+      .input(clip.filePath)
+      .inputOptions([`-ss ${clip.inPoint}`, `-t ${trimDuration}`]);
+  });
+  
+  // Concatenate multiple clips
+  if (clips.length > 1) {
+    const filterComplex = clips.map((_, i) => 
+      `[${i}:v:0][${i}:a:0]`).join('');
+    command = command.complexFilter([
+      `${filterComplex}concat=n=${clips.length}:v=1:a=1[outv][outa]`
+    ]);
+  }
+  
+  // Apply codec settings based on quality
+  command = command
+    .videoCodec('libx264')
+    .audioCodec('aac')
+    .outputOptions(['-preset medium', '-crf 23']);
+  
+  return { command, totalDuration };
+};
+```
+
+#### Progress Tracking
+```typescript
+// FFmpeg emits progress events during export
+activeExportProcess
+  .on('progress', (progress) => {
+    const currentTime = parseTimemark(progress.timemark);
+    const percent = (currentTime / totalDuration) * 100;
+    const estimatedTime = calculateEstimatedTime(currentTime, elapsedTime);
+    
+    mainWindow.webContents.send('export-progress-update', {
+      percent,
+      currentTime,
+      estimatedTime,
+      fps: progress.currentFps,
+      speed: progress.speed
+    });
+  })
+  .on('end', () => {
+    mainWindow.webContents.send('export-complete', {
+      success: true,
+      outputPath: request.outputPath
+    });
+  })
+  .on('error', (error) => {
+    mainWindow.webContents.send('export-error', {
+      success: false,
+      error: error.message
+    });
+  });
+```
+
+#### Export State Management
+```typescript
+// ProjectContext extended with export state
+interface ExtendedProjectContextState extends ProjectContextState {
+  exportState: ExportState;
+}
+
+interface ExportState {
+  status: 'idle' | 'exporting' | 'success' | 'error' | 'cancelled';
+  progress: ExportProgress | null;
+  options: ExportOptions | null;
+  result: ExportResult | null;
+  error: string | null;
+}
+
+// Export event listeners in App.tsx
+useEffect(() => {
+  const removeProgressListener = window.electronAPI.onExportProgressUpdate(
+    (progress) => setExportProgress(progress)
+  );
+  
+  const removeCompleteListener = window.electronAPI.onExportComplete(
+    (result) => setExportResult(result)
+  );
+  
+  const removeErrorListener = window.electronAPI.onExportError(
+    (result) => setExportError(result.error)
+  );
+  
+  return () => {
+    removeProgressListener();
+    removeCompleteListener();
+    removeErrorListener();
+  };
+}, []);
+```
+
+### 8. Project Persistence Patterns
 
 #### Project Data Structure
 ```typescript
@@ -461,7 +591,8 @@ export const validateTrimPoints = (clip: VideoClip) => {
 - **VideoPreview**: Displays video content with dynamic clip switching and timeline sync
 - **Timeline**: Shows clips and playhead, handles trim operations and multi-clip positioning
 - **Timeline Components**: ClipBlock, TimeMarkers, Playhead, EmptyState for modular timeline
-- **ExportButton**: Initiates export process
+- **ExportButton**: Opens export dialog with integrated state management
+- **ExportDialog**: Full-featured export configuration dialog with progress tracking
 
 ### Supporting Components
 - **StatusCard**: Shows system status and IPC communication
@@ -484,20 +615,31 @@ src/
 │   ├── TimeMarker.tsx       # Timeline time markers
 │   ├── Playhead.tsx         # Timeline playhead component
 │   ├── EmptyState.tsx       # Empty timeline state
-│   ├── ExportButton.tsx     # Export functionality
+│   ├── ExportButton.tsx     # Export button with dialog integration
+│   ├── ExportDialog.tsx     # Export configuration dialog with progress
 │   ├── ImportProgress.tsx   # Progress modal for imports
+│   ├── TrimHandle.tsx       # Draggable trim handles
+│   ├── TrimEditor.tsx       # Trim editing wrapper
+│   ├── ProjectSelectionDialog.tsx  # Project selection on launch
 │   └── index.ts             # Component exports
 ├── contexts/            # React contexts
 │   ├── MediaLibraryContext.tsx  # Video clip state management
-│   └── TimelineContext.tsx      # Timeline state and playhead management
+│   ├── TimelineContext.tsx      # Timeline state and playhead management
+│   └── ProjectContext.tsx       # Project persistence and export state
 ├── hooks/               # Custom React hooks
-│   └── useTimeline.ts       # Timeline logic and interactions
+│   ├── useTimeline.ts       # Timeline logic and interactions
+│   └── useTrimEditing.ts    # Trim handle drag logic
 ├── types/               # TypeScript definitions
 │   ├── ipc.ts               # IPC interfaces and types
-│   └── timeline.ts          # Timeline-specific types and interfaces
+│   ├── timeline.ts          # Timeline-specific types and interfaces
+│   ├── project.ts           # Project persistence types
+│   └── export.ts            # Export-specific types and interfaces
 └── utils/               # Utility functions
-    ├── videoUtils.ts        # FFmpeg integration and video processing
-    └── timelineUtils.ts     # Timeline calculation utilities
+    ├── videoUtils.ts        # Video processing utilities (renderer-safe)
+    ├── timelineUtils.ts     # Timeline calculation utilities
+    ├── timelineSequence.ts  # Timeline-to-clip time mapping
+    ├── exportUtils.ts       # Export utilities and FFmpeg helpers
+    └── autoSave.ts          # Auto-save manager
 ```
 
 ## Performance Considerations

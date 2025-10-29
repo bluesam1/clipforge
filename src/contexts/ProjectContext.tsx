@@ -1,19 +1,45 @@
 import React, { createContext, useContext, useReducer, ReactNode, useCallback, useEffect } from 'react';
 import { ProjectData, ProjectContextState, ProjectAction, DEFAULT_PROJECT_DATA } from '../types/project';
 import { autoSaveManager, AutoSaveOptions } from '../utils/autoSave';
+import type { ExportState, ExportOptions, ExportProgress, ExportResult, ExportStatus } from '../types/export';
+
+// Initial export state
+const initialExportState: ExportState = {
+  status: 'idle',
+  progress: null,
+  options: null,
+  result: null,
+  error: null,
+};
+
+// Extended initial state with export
+interface ExtendedProjectContextState extends ProjectContextState {
+  exportState: ExportState;
+}
 
 // Initial state
-const initialState: ProjectContextState = {
+const initialState: ExtendedProjectContextState = {
   currentProject: null,
   isDirty: false,
   isSaving: false,
   isLoading: false,
   lastSaved: undefined,
   error: null,
+  exportState: initialExportState,
 };
 
+// Extended action type
+type ExtendedProjectAction = 
+  | ProjectAction
+  | { type: 'SET_EXPORT_STATUS'; payload: ExportStatus }
+  | { type: 'SET_EXPORT_PROGRESS'; payload: ExportProgress }
+  | { type: 'SET_EXPORT_OPTIONS'; payload: ExportOptions }
+  | { type: 'SET_EXPORT_RESULT'; payload: ExportResult }
+  | { type: 'SET_EXPORT_ERROR'; payload: string }
+  | { type: 'RESET_EXPORT_STATE' };
+
 // Reducer function
-function projectReducer(state: ProjectContextState, action: ProjectAction): ProjectContextState {
+function projectReducer(state: ExtendedProjectContextState, action: ExtendedProjectAction): ExtendedProjectContextState {
   switch (action.type) {
     case 'SET_PROJECT':
       return {
@@ -76,6 +102,59 @@ function projectReducer(state: ProjectContextState, action: ProjectAction): Proj
         isDirty: false,
       };
     
+    case 'SET_EXPORT_STATUS':
+      return {
+        ...state,
+        exportState: {
+          ...state.exportState,
+          status: action.payload,
+        },
+      };
+    
+    case 'SET_EXPORT_PROGRESS':
+      return {
+        ...state,
+        exportState: {
+          ...state.exportState,
+          progress: action.payload,
+        },
+      };
+    
+    case 'SET_EXPORT_OPTIONS':
+      return {
+        ...state,
+        exportState: {
+          ...state.exportState,
+          options: action.payload,
+        },
+      };
+    
+    case 'SET_EXPORT_RESULT':
+      return {
+        ...state,
+        exportState: {
+          ...state.exportState,
+          result: action.payload,
+          status: action.payload.success ? 'success' : 'error',
+        },
+      };
+    
+    case 'SET_EXPORT_ERROR':
+      return {
+        ...state,
+        exportState: {
+          ...state.exportState,
+          error: action.payload,
+          status: 'error',
+        },
+      };
+    
+    case 'RESET_EXPORT_STATE':
+      return {
+        ...state,
+        exportState: initialExportState,
+      };
+    
     default:
       return state;
   }
@@ -83,7 +162,7 @@ function projectReducer(state: ProjectContextState, action: ProjectAction): Proj
 
 // Context interface
 interface ProjectContextType {
-  state: ProjectContextState;
+  state: ExtendedProjectContextState;
   // Project management
   createNewProject: (projectName?: string) => void;
   loadProject: (projectData: ProjectData) => void;
@@ -95,6 +174,13 @@ interface ProjectContextType {
   // Auto-save
   enableAutoSave: (enabled: boolean) => void;
   updateAutoSaveInterval: (interval: number) => void;
+  // Export operations
+  setExportStatus: (status: ExportStatus) => void;
+  setExportProgress: (progress: ExportProgress) => void;
+  setExportOptions: (options: ExportOptions) => void;
+  setExportResult: (result: ExportResult) => void;
+  setExportError: (error: string) => void;
+  resetExportState: () => void;
   // Utility functions
   getProjectName: () => string;
   isProjectLoaded: () => boolean;
@@ -293,6 +379,31 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     return state.isDirty;
   }, [state.isDirty]);
 
+  // Export state management
+  const setExportStatus = useCallback((status: ExportStatus) => {
+    dispatch({ type: 'SET_EXPORT_STATUS', payload: status });
+  }, []);
+
+  const setExportProgress = useCallback((progress: ExportProgress) => {
+    dispatch({ type: 'SET_EXPORT_PROGRESS', payload: progress });
+  }, []);
+
+  const setExportOptions = useCallback((options: ExportOptions) => {
+    dispatch({ type: 'SET_EXPORT_OPTIONS', payload: options });
+  }, []);
+
+  const setExportResult = useCallback((result: ExportResult) => {
+    dispatch({ type: 'SET_EXPORT_RESULT', payload: result });
+  }, []);
+
+  const setExportError = useCallback((error: string) => {
+    dispatch({ type: 'SET_EXPORT_ERROR', payload: error });
+  }, []);
+
+  const resetExportState = useCallback(() => {
+    dispatch({ type: 'RESET_EXPORT_STATE' });
+  }, []);
+
   const value: ProjectContextType = {
     state,
     createNewProject,
@@ -303,6 +414,12 @@ export function ProjectProvider({ children }: ProjectProviderProps) {
     saveProjectAs,
     enableAutoSave,
     updateAutoSaveInterval,
+    setExportStatus,
+    setExportProgress,
+    setExportOptions,
+    setExportResult,
+    setExportError,
+    resetExportState,
     getProjectName,
     isProjectLoaded,
     hasUnsavedChanges,

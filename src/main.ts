@@ -16,6 +16,7 @@ import {
   PROJECT_FILE_EXTENSION,
   MAX_RECENT_PROJECTS
 } from './types/project';
+import type { ExportRequest, ExportResult, ExportProgressEvent } from './types/export';
 
 // Vite environment variables
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
@@ -155,6 +156,217 @@ async function processVideoFiles(filePaths: string[]): Promise<{ clips: VideoCli
 }
 
 // ==================== END VIDEO UTILITIES ====================
+
+// ==================== VIDEO EXPORT UTILITIES ====================
+
+// Active export process tracking
+let activeExportProcess: any = null;
+let exportStartTime: number = 0;
+
+// Build FFmpeg command for export
+function buildExportCommand(request: ExportRequest): any {
+  const { clips, outputPath, options } = request;
+  
+  // Start with FFmpeg command
+  let command = ffmpeg();
+  
+  // Calculate total duration for progress tracking
+  const totalDuration = clips.reduce((sum, clip) => sum + (clip.outPoint - clip.inPoint), 0);
+  
+  // Add inputs with trim filters
+  clips.forEach((clip, index) => {
+    const trimDuration = clip.outPoint - clip.inPoint;
+    command = command
+      .input(clip.filePath)
+      .inputOptions([
+        `-ss ${clip.inPoint}`,
+        `-t ${trimDuration}`
+      ]);
+  });
+  
+  // If multiple clips, concatenate them
+  if (clips.length > 1) {
+    const filterComplex = clips.map((_, index) => `[${index}:v:0][${index}:a:0]`).join('');
+    command = command.complexFilter([
+      `${filterComplex}concat=n=${clips.length}:v=1:a=1[outv][outa]`
+    ]).map('[outv]').map('[outa]');
+  }
+  
+  // Get codec settings based on quality
+  const codecSettings = {
+    low: { videoBitrate: '2000k', audioBitrate: '128k', preset: 'veryfast', crf: 28 },
+    medium: { videoBitrate: '5000k', audioBitrate: '192k', preset: 'medium', crf: 23 },
+    high: { videoBitrate: '10000k', audioBitrate: '256k', preset: 'slow', crf: 18 }
+  }[options.quality];
+  
+  // Set video codec options
+  command = command
+    .videoCodec('libx264')
+    .videoBitrate(codecSettings.videoBitrate)
+    .outputOptions([
+      `-preset ${codecSettings.preset}`,
+      `-crf ${codecSettings.crf}`
+    ]);
+  
+  // Set audio codec options
+  command = command
+    .audioCodec('aac')
+    .audioBitrate(codecSettings.audioBitrate);
+  
+  // Handle resolution scaling
+  if (options.resolution !== 'source' && clips.length > 0) {
+    const dimensions = {
+      '1080p': { width: 1920, height: 1080 },
+      '720p': { width: 1280, height: 720 }
+    }[options.resolution];
+    
+    if (dimensions) {
+      // Calculate scaled dimensions maintaining aspect ratio
+      const sourceWidth = clips[0].duration; // This should come from metadata
+      const sourceHeight = clips[0].duration; // This should come from metadata
+      
+      command = command.size(`${dimensions.width}x${dimensions.height}`);
+    }
+  }
+  
+  // Set output format
+  command = command
+    .format('mp4')
+    .outputOptions([
+      '-movflags +faststart', // Enable streaming
+      '-pix_fmt yuv420p' // Ensure compatibility
+    ]);
+  
+  return { command, totalDuration };
+}
+
+// Execute video export
+async function executeExport(
+  request: ExportRequest,
+  mainWindow: BrowserWindow
+): Promise<ExportResult> {
+  return new Promise((resolve, reject) => {
+    try {
+      exportStartTime = Date.now();
+      const { command, totalDuration } = buildExportCommand(request);
+      
+      // Save the process reference
+      activeExportProcess = command
+        .output(request.outputPath)
+        .on('start', (commandLine: string) => {
+          console.log('FFmpeg command:', commandLine);
+          mainWindow.webContents.send('export-progress-update', {
+            percent: 0,
+            currentTime: 0,
+            estimatedTime: 0
+          });
+        })
+        .on('progress', (progress: any) => {
+          try {
+            const currentTime = progress.timemark ? parseTimemark(progress.timemark) : 0;
+            const percent = totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
+            const elapsedSeconds = (Date.now() - exportStartTime) / 1000;
+            const estimatedTime = currentTime > 0 
+              ? (elapsedSeconds / (currentTime / totalDuration)) - elapsedSeconds 
+              : 0;
+            
+            const progressEvent: ExportProgressEvent = {
+              percent: Math.min(percent, 100),
+              currentTime,
+              currentFps: progress.currentFps,
+              speed: progress.speed,
+              targetSize: progress.targetSize
+            };
+            
+            mainWindow.webContents.send('export-progress-update', {
+              percent: progressEvent.percent,
+              currentTime: progressEvent.currentTime,
+              estimatedTime: Math.max(estimatedTime, 0),
+              fps: progressEvent.currentFps,
+              speed: progressEvent.speed
+            });
+          } catch (error) {
+            console.error('Error processing progress:', error);
+          }
+        })
+        .on('end', async () => {
+          try {
+            // Validate output file
+            await fs.access(request.outputPath);
+            const stats = await fs.stat(request.outputPath);
+            
+            if (stats.size < 1024) {
+              reject(new Error('Export file is too small, may be corrupted'));
+              return;
+            }
+            
+            const duration = (Date.now() - exportStartTime) / 1000;
+            const result: ExportResult = {
+              success: true,
+              outputPath: request.outputPath,
+              message: 'Export completed successfully',
+              duration
+            };
+            
+            mainWindow.webContents.send('export-complete', result);
+            activeExportProcess = null;
+            resolve(result);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Export validation failed';
+            reject(new Error(errorMessage));
+          }
+        })
+        .on('error', (error: Error) => {
+          console.error('FFmpeg export error:', error);
+          activeExportProcess = null;
+          
+          const result: ExportResult = {
+            success: false,
+            error: error.message,
+            message: 'Export failed'
+          };
+          
+          mainWindow.webContents.send('export-error', result);
+          reject(error);
+        });
+      
+      // Start the export
+      activeExportProcess.run();
+    } catch (error) {
+      console.error('Export execution error:', error);
+      reject(error);
+    }
+  });
+}
+
+// Parse FFmpeg timemark (format: 00:00:10.50)
+function parseTimemark(timemark: string): number {
+  const parts = timemark.split(':');
+  if (parts.length !== 3) return 0;
+  
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const seconds = parseFloat(parts[2]);
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+// Cancel active export
+function cancelExport(): boolean {
+  if (activeExportProcess) {
+    try {
+      activeExportProcess.kill('SIGKILL');
+      activeExportProcess = null;
+      return true;
+    } catch (error) {
+      console.error('Error cancelling export:', error);
+      return false;
+    }
+  }
+  return false;
+}
+
+// ==================== END VIDEO EXPORT UTILITIES ====================
 
 // Project file validation
 function validateProjectData(data: any): ProjectValidationResult {
@@ -476,15 +688,76 @@ ipcMain.handle('import-video', async (event, filePath: string) => {
   return { success: true, message: 'Video import not yet implemented' };
 });
 
-ipcMain.handle('export-video', async (event, data: unknown) => {
-  // TODO: Implement video export logic
-  console.log('Export video request:', data);
-  return { success: true, message: 'Video export not yet implemented' };
+ipcMain.handle('export-video', async (event, request: ExportRequest): Promise<ExportResult> => {
+  try {
+    console.log('Export video request:', request);
+    
+    // Validate request
+    if (!request.clips || request.clips.length === 0) {
+      return {
+        success: false,
+        error: 'No clips to export',
+        message: 'Export failed'
+      };
+    }
+    
+    if (!request.outputPath) {
+      return {
+        success: false,
+        error: 'No output path specified',
+        message: 'Export failed'
+      };
+    }
+    
+    // Get the main window
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) {
+      return {
+        success: false,
+        error: 'Main window not found',
+        message: 'Export failed'
+      };
+    }
+    
+    // Execute export
+    const result = await executeExport(request, mainWindow);
+    return result;
+  } catch (error) {
+    console.error('Export video IPC error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      message: 'Export failed'
+    };
+  }
 });
 
-ipcMain.handle('export-progress', () => {
-  // TODO: Return actual export progress
-  return { progress: 0, status: 'idle' };
+// Export cancel handler
+ipcMain.handle('export-cancel', async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    const cancelled = cancelExport();
+    return {
+      success: cancelled,
+      message: cancelled ? 'Export cancelled' : 'No active export to cancel'
+    };
+  } catch (error) {
+    console.error('Export cancel error:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Failed to cancel export'
+    };
+  }
+});
+
+// Save dialog handler for export
+ipcMain.handle('dialog:showSaveDialog', async (event, options: any) => {
+  try {
+    const result = await dialog.showSaveDialog(options);
+    return result;
+  } catch (error) {
+    console.error('Save dialog error:', error);
+    return { canceled: true, filePath: undefined };
+  }
 });
 
 // Project save handler

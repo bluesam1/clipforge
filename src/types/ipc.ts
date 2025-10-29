@@ -57,6 +57,8 @@ export interface VideoImportResponse {
   };
 }
 
+// Export types moved to src/types/export.ts
+// These interfaces are maintained for backward compatibility
 export interface VideoExportRequest {
   outputPath: string;
   startTime: number;
@@ -70,12 +72,6 @@ export interface VideoExportResponse {
   outputPath?: string;
 }
 
-export interface ExportProgress {
-  progress: number; // 0-100
-  status: 'idle' | 'processing' | 'completed' | 'error';
-  message?: string;
-}
-
 // IPC Channel Names
 export const IPC_CHANNELS = {
   PING: 'ping',
@@ -87,6 +83,8 @@ export const IPC_CHANNELS = {
   EXPORT_PROGRESS: 'export-progress',
   EXPORT_PROGRESS_UPDATE: 'export-progress-update',
   EXPORT_COMPLETE: 'export-complete',
+  EXPORT_ERROR: 'export-error',
+  EXPORT_CANCEL: 'export-cancel',
   // Project persistence channels
   PROJECT_SAVE: 'project-save',
   PROJECT_SAVE_AS: 'project-save-as',
