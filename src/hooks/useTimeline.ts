@@ -17,6 +17,9 @@ export function useTimeline() {
 
   // Handle timeline click to position playhead
   const handleTimelineClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
     const rect = event.currentTarget.getBoundingClientRect();
     const clickX = event.clientX - rect.left;
     const time = timelineContext.pixelsToTime(clickX);
@@ -28,7 +31,20 @@ export function useTimeline() {
       timelineContext.config.snapToGrid
     );
     
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] User clicked timeline - setting playhead to ${snappedTime.toFixed(2)}s (clicked at ${time.toFixed(2)}s, clickX: ${clickX.toFixed(1)}px)`);
+    console.log(`[${timestamp}] Current playhead position before update: ${timelineContext.state.playheadPosition.toFixed(2)}s`);
+    
+    // Set a flag to prevent timeupdate interference (this will be handled by VideoPreview)
+    // We can't access userInteractingRef directly here, so we'll rely on VideoPreview's handling
+    
     timelineContext.setPlayheadPosition(snappedTime);
+    
+    // Log after setting to verify it was updated
+    setTimeout(() => {
+      const verifyTimestamp = new Date().toISOString();
+      console.log(`[${verifyTimestamp}] Playhead position after update: ${timelineContext.state.playheadPosition.toFixed(2)}s`);
+    }, 10);
   }, [timelineContext]);
 
   // Handle playhead drag start
@@ -58,6 +74,9 @@ export function useTimeline() {
     };
     
     const handleMouseUp = () => {
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] User finished dragging playhead - final position: ${timelineContext.state.playheadPosition.toFixed(2)}s`);
+      
       isDraggingRef.current = false;
       timelineContext.updatePlayhead({ isDragging: false });
       document.removeEventListener('mousemove', handleMouseMove);

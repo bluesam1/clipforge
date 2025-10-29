@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useMemo, useCallback } from 'react';
 import { VideoClip } from '../types/ipc';
+import { buildClipSequence, mapTimelineToClip, ClipSequence, TimelinePosition } from '../utils/timelineSequence';
 
 // State interface
 interface MediaLibraryState {
@@ -7,6 +8,7 @@ interface MediaLibraryState {
   isLoading: boolean;
   error: string | null;
   selectedClipId: string | null;
+  currentPlayingClipId: string | null;
 }
 
 // Action types
@@ -17,6 +19,7 @@ type MediaLibraryAction =
   | { type: 'ADD_CLIPS'; payload: VideoClip[] }
   | { type: 'REMOVE_CLIP'; payload: string }
   | { type: 'SELECT_CLIP'; payload: string | null }
+  | { type: 'SET_CURRENT_PLAYING_CLIP'; payload: string | null }
   | { type: 'CLEAR_CLIPS' }
   | { type: 'UPDATE_CLIP'; payload: VideoClip };
 
@@ -26,6 +29,7 @@ const initialState: MediaLibraryState = {
   isLoading: false,
   error: null,
   selectedClipId: null,
+  currentPlayingClipId: null,
 };
 
 // Reducer function
@@ -66,11 +70,18 @@ function mediaLibraryReducer(state: MediaLibraryState, action: MediaLibraryActio
         selectedClipId: action.payload,
       };
     
+    case 'SET_CURRENT_PLAYING_CLIP':
+      return {
+        ...state,
+        currentPlayingClipId: action.payload,
+      };
+    
     case 'CLEAR_CLIPS':
       return {
         ...state,
         clips: [],
         selectedClipId: null,
+        currentPlayingClipId: null,
         error: null,
       };
     
@@ -94,6 +105,7 @@ interface MediaLibraryContextType {
   addClips: (clips: VideoClip[]) => void;
   removeClip: (clipId: string) => void;
   selectClip: (clipId: string | null) => void;
+  setCurrentPlayingClip: (clipId: string | null) => void;
   clearClips: () => void;
   updateClip: (clip: VideoClip) => void;
   setLoading: (loading: boolean) => void;
@@ -101,6 +113,11 @@ interface MediaLibraryContextType {
   getClipById: (clipId: string) => VideoClip | undefined;
   getAllClips: () => VideoClip[];
   getSelectedClip: () => VideoClip | undefined;
+  getCurrentPlayingClip: () => VideoClip | undefined;
+  // Timeline sequence methods
+  getClipSequence: () => ClipSequence;
+  getClipAtTime: (timelineTime: number) => TimelinePosition;
+  getTimelinePosition: (clipId: string, localTime: number) => TimelinePosition;
 }
 
 // Create context
@@ -129,6 +146,10 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
 
   const selectClip = (clipId: string | null) => {
     dispatch({ type: 'SELECT_CLIP', payload: clipId });
+  };
+
+  const setCurrentPlayingClip = (clipId: string | null) => {
+    dispatch({ type: 'SET_CURRENT_PLAYING_CLIP', payload: clipId });
   };
 
   const clearClips = () => {
@@ -161,12 +182,31 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
     return getClipById(state.selectedClipId);
   };
 
+  const getCurrentPlayingClip = (): VideoClip | undefined => {
+    if (!state.currentPlayingClipId) return undefined;
+    return getClipById(state.currentPlayingClipId);
+  };
+
+  // Timeline sequence methods
+  const getClipSequence = useCallback((): ClipSequence => {
+    return buildClipSequence(state.clips);
+  }, [state.clips]);
+
+  const getClipAtTime = useCallback((timelineTime: number): TimelinePosition => {
+    return mapTimelineToClip(timelineTime, getClipSequence());
+  }, [getClipSequence]);
+
+  const getTimelinePosition = useCallback((clipId: string, localTime: number): TimelinePosition => {
+    return mapClipToTimeline(clipId, localTime, getClipSequence());
+  }, [getClipSequence]);
+
   const value: MediaLibraryContextType = {
     state,
     addClip,
     addClips,
     removeClip,
     selectClip,
+    setCurrentPlayingClip,
     clearClips,
     updateClip,
     setLoading,
@@ -174,6 +214,10 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
     getClipById,
     getAllClips,
     getSelectedClip,
+    getCurrentPlayingClip,
+    getClipSequence,
+    getClipAtTime,
+    getTimelinePosition,
   };
 
   return (

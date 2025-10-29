@@ -28,11 +28,12 @@ Renderer Process (Chromium)
 - **Web Security**: Disabled to allow local file access for video preview
 
 ### 3. State Management Pattern
-- **MediaLibraryContext**: Manages imported video clips and clip sequence
+- **MediaLibraryContext**: Manages imported video clips and clip sequence with timeline mapping
 - **TimelineContext**: Handles timeline state, playhead, zoom, and playback
-- **PlayerContext**: Controls playback state (integrated with TimelineContext)
-- **Local State**: Component-specific data
+- **VideoPreview Component**: Manages video playback, seeking, and clip switching
+- **Local State**: Component-specific data with refs for interaction flags
 - **Timeline Sequence**: Maps timeline time to clip positions and local times
+- **User Interaction Protection**: Prevents circular updates and timeupdate interference
 
 ### 4. IPC Communication Pattern
 ```typescript
@@ -138,6 +139,90 @@ class ErrorBoundary extends React.Component {
   // ... error handling logic
 }
 ```
+
+## Multi-Clip Playback Patterns
+
+### 1. Timeline Sequence Management
+```typescript
+// Timeline sequence maps global timeline time to clip positions
+interface ClipSequenceItem {
+  clip: VideoClip;
+  startTime: number;  // Global timeline position
+  endTime: number;    // Global timeline position
+  duration: number;   // Clip duration
+}
+
+// Utility functions for time mapping
+const getClipAtTime = (timelineTime: number) => {
+  // Find which clip contains the timeline time
+  // Return clip ID and local time within clip
+};
+
+const getTimelineTime = (clipId: string, localTime: number) => {
+  // Convert clip local time to global timeline time
+};
+```
+
+### 2. Video Switching Pattern
+```typescript
+// VideoPreview component handles dynamic clip switching
+const VideoPreview = () => {
+  const [currentPlayingClip, setCurrentPlayingClip] = useState<VideoClip>();
+  const userInteractingRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  
+  // Effect 1: Handle video source changes
+  useEffect(() => {
+    // Load new video source when clip changes
+  }, [currentPlayingClip]);
+  
+  // Effect 2: Handle timeline seeking within current clip
+  useEffect(() => {
+    // Seek video to correct position within current clip
+  }, [timelineState.playheadPosition, currentPlayingClip]);
+  
+  // Effect 3: Handle pending seeks after clip switching
+  useEffect(() => {
+    // Execute pending seek after new video loads
+  }, [currentPlayingClip, pendingSeekRef.current]);
+};
+```
+
+### 3. User Interaction Protection
+```typescript
+// Prevents timeupdate from overriding user actions
+const userInteractingRef = useRef(false);
+
+// Set flag during user interactions
+const handleTimelineClick = () => {
+  userInteractingRef.current = true;
+  // Perform action
+  setTimeout(() => {
+    userInteractingRef.current = false;
+  }, 500);
+};
+
+// Block timeupdate during user interactions
+const handleTimeUpdate = () => {
+  if (userInteractingRef.current) return;
+  // Update timeline position
+};
+```
+
+### 4. Clip Switching Flow
+1. **User clicks timeline** → playhead position changes
+2. **Timeline seeking effect** → checks if position is within current clip
+3. **If outside current clip** → sets `pendingSeekRef` and `userInteractingRef`
+4. **Timeline position effect** → switches to correct clip
+5. **Video source effect** → loads new video
+6. **Pending seek effect** → seeks to correct position after video loads
+7. **User interaction flag clears** → allows normal timeupdate updates
+
+### 5. Gap Functionality Removal
+- **Decision**: Removed all gap-related functionality from timeline and video preview
+- **Reason**: Gap indicators were interfering with timeline click responsiveness
+- **Impact**: Simplified timeline interaction logic, improved click reliability
+- **Components Removed**: GapIndicator component, gap detection logic, gap interaction handlers
 
 ## Component Relationships
 
