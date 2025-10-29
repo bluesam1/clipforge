@@ -8,3 +8,4 @@ export { default as ClipBlock } from './ClipBlock';
 export { default as TimeMarkers, TimeMarker } from './TimeMarker';
 export { default as EmptyState } from './EmptyState';
 export { default as Playhead, PlayheadContainer } from './Playhead';
+export { ProjectSelectionDialog } from './ProjectSelectionDialog';

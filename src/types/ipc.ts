@@ -5,7 +5,9 @@ export interface VideoClip {
   id: string;
   filePath: string;
   fileName: string;
-  duration: number; // in seconds
+  duration: number; // in seconds (original duration)
+  inPoint: number; // trim start point in seconds
+  outPoint: number; // trim end point in seconds
   width: number;
   height: number;
   fps: number;
@@ -85,6 +87,11 @@ export const IPC_CHANNELS = {
   EXPORT_PROGRESS: 'export-progress',
   EXPORT_PROGRESS_UPDATE: 'export-progress-update',
   EXPORT_COMPLETE: 'export-complete',
+  // Project persistence channels
+  PROJECT_SAVE: 'project-save',
+  PROJECT_SAVE_AS: 'project-save-as',
+  PROJECT_LOAD: 'project-load',
+  PROJECT_OPEN: 'project-open',
 } as const;
 
 // Type for IPC channel names

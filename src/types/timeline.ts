@@ -18,6 +18,33 @@ export interface PlayheadState {
   isDragging: boolean; // Whether user is currently dragging playhead
 }
 
+// Trim state interface for drag operations
+export interface TrimState {
+  isDragging: boolean; // Whether user is currently dragging a trim handle
+  dragHandle: 'start' | 'end' | null; // Which handle is being dragged
+  dragStartPosition: number; // Initial position when drag started
+  dragStartTime: number; // Initial time when drag started
+  currentPosition: number; // Current mouse position during drag
+  currentTime: number; // Current time during drag
+  clipId: string | null; // ID of the clip being trimmed
+  isValid: boolean; // Whether current trim position is valid
+  constraintViolation: string | null; // Description of any constraint violation
+}
+
+// Trim handle props interface
+export interface TrimHandleProps {
+  type: 'start' | 'end';
+  clipId: string;
+  position: number; // Position in pixels
+  isVisible: boolean;
+  isDragging: boolean;
+  onDragStart: (handleType: 'start' | 'end', clipId: string, startPosition: number) => void;
+  onDragMove: (position: number) => void;
+  onDragEnd: () => void;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}
+
 // Clip position on timeline
 export interface ClipPosition {
   clipId: string;
@@ -73,6 +100,14 @@ export type TimelineAction =
   | { type: 'UPDATE_PLAYHEAD'; payload: PlayheadState }
   | { type: 'RESET_TIMELINE' }
   | { type: 'SET_CONFIG'; payload: Partial<TimelineConfig> };
+
+// Trim action types
+export type TrimAction =
+  | { type: 'START_DRAG'; payload: { handleType: 'start' | 'end'; clipId: string; startPosition: number; startTime: number } }
+  | { type: 'UPDATE_DRAG'; payload: { position: number; time: number } }
+  | { type: 'END_DRAG' }
+  | { type: 'SET_VALIDITY'; payload: { isValid: boolean; violation: string | null } }
+  | { type: 'RESET_TRIM' };
 
 // Timeline context interface
 export interface TimelineContextType {

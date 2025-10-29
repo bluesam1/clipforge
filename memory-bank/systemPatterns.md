@@ -28,12 +28,14 @@ Renderer Process (Chromium)
 - **Web Security**: Disabled to allow local file access for video preview
 
 ### 3. State Management Pattern
-- **MediaLibraryContext**: Manages imported video clips and clip sequence with timeline mapping
+- **ProjectContext**: Manages project state, save/load, and auto-save functionality
+- **MediaLibraryContext**: Manages imported video clips, clip sequence, trim state, and timeline mapping
 - **TimelineContext**: Handles timeline state, playhead, zoom, and playback
-- **VideoPreview Component**: Manages video playback, seeking, and clip switching
+- **VideoPreview Component**: Manages video playback, seeking, clip switching, and trimmed content
 - **Local State**: Component-specific data with refs for interaction flags
-- **Timeline Sequence**: Maps timeline time to clip positions and local times
+- **Timeline Sequence**: Maps timeline time to clip positions and local times (respects trim)
 - **User Interaction Protection**: Prevents circular updates and timeupdate interference
+- **Trim State Management**: Tracks clip inPoint/outPoint with 1-second minimum duration validation
 
 ### 4. IPC Communication Pattern
 ```typescript
@@ -79,11 +81,22 @@ App.tsx (MediaLibraryProvider)
 7. Video time updates feed back to timeline position
 
 #### Trim Flow
-1. User drags handle → Renderer
-2. Mouse tracking calculates new in/out points
-3. Update clip data in context
-4. Re-render timeline with new clip length
-5. Update preview to show trimmed content
+1. User selects clip → Renderer highlights clip and shows trim handles
+2. User drags trim handle → `TrimHandle` component captures mouse events
+3. `useTrimEditing` hook calculates new in/out points with constraints
+4. Constraints applied: 1-second minimum, within clip duration
+5. `MediaLibraryContext` updates clip trim state (inPoint/outPoint)
+6. Timeline re-renders with new clip width (trimmed duration)
+7. Video preview updates to respect trim bounds during playback
+8. Project auto-saves trim state to .clipforge file
+
+#### Project Persistence Flow
+1. User creates/opens project → `ProjectContext` loads/initializes state
+2. User makes changes (import, trim) → `MediaLibraryContext` updates
+3. `ProjectContext` detects changes → Triggers auto-save via `AutoSaveManager`
+4. Auto-save serializes project data → IPC → Main process
+5. Main process writes .clipforge JSON file
+6. Project state includes clips with trim data (inPoint/outPoint)
 
 #### Export Flow
 1. User clicks export → Renderer
@@ -223,6 +236,222 @@ const handleTimeUpdate = () => {
 - **Reason**: Gap indicators were interfering with timeline click responsiveness
 - **Impact**: Simplified timeline interaction logic, improved click reliability
 - **Components Removed**: GapIndicator component, gap detection logic, gap interaction handlers
+
+### 6. Trim Editing Patterns
+
+#### Trim State Structure
+```typescript
+interface VideoClip {
+  id: string;
+  filePath: string;
+  fileName: string;
+  duration: number;     // Original clip duration
+  inPoint: number;      // Trim start point (seconds)
+  outPoint: number;     // Trim end point (seconds)
+  // ... other metadata
+}
+
+// Trimmed duration calculation
+const getTrimmedDuration = (clip: VideoClip) => clip.outPoint - clip.inPoint;
+```
+
+#### Trim Handle Drag Pattern
+```typescript
+const useTrimEditing = (clipId: string, handleType: 'start' | 'end') => {
+  const [trimState, dispatch] = useReducer(trimReducer, initialState);
+  
+  const startDrag = (startPosition: number) => {
+    // Record initial state
+    dispatch({ 
+      type: 'START_DRAG', 
+      dragHandle: handleType,
+      dragStartPosition: startPosition,
+      dragStartTime: clip[handleType === 'start' ? 'inPoint' : 'outPoint']
+    });
+  };
+  
+  const updateDrag = (currentPosition: number) => {
+    // Calculate time delta from start
+    const positionDelta = currentPosition - trimState.dragStartPosition;
+    const timeDelta = pixelsToTime(positionDelta);
+    const newTime = trimState.dragStartTime + timeDelta;
+    
+    // Apply constraints
+    const { time, isValid, violation } = applyTrimConstraints(
+      newTime, 
+      clip, 
+      handleType
+    );
+    
+    dispatch({ type: 'UPDATE_DRAG', currentTime: time, isValid, violation });
+  };
+  
+  const endDrag = () => {
+    // Commit trim to clip data
+    updateClipTrim(clipId, {
+      inPoint: handleType === 'start' ? trimState.currentTime : clip.inPoint,
+      outPoint: handleType === 'end' ? trimState.currentTime : clip.outPoint
+    });
+    dispatch({ type: 'END_DRAG' });
+  };
+  
+  return { trimState, startDrag, updateDrag, endDrag };
+};
+```
+
+#### Trim Constraints
+```typescript
+const applyTrimConstraints = (
+  time: number,
+  clip: VideoClip,
+  handleType: 'start' | 'end'
+) => {
+  if (handleType === 'start') {
+    // Start handle: 0 <= inPoint <= outPoint - 1
+    const constrainedTime = Math.max(0, Math.min(time, clip.outPoint - 1));
+    const violation = constrainedTime >= clip.outPoint - 1
+      ? 'Start point must be at least 1 second before end point'
+      : null;
+    return { time: constrainedTime, isValid: !violation, violation };
+  } else {
+    // End handle: inPoint + 1 <= outPoint <= duration
+    const constrainedTime = Math.max(clip.inPoint + 1, Math.min(time, clip.duration));
+    const violation = constrainedTime <= clip.inPoint + 1
+      ? 'End point must be at least 1 second after start point'
+      : null;
+    return { time: constrainedTime, isValid: !violation, violation };
+  }
+};
+```
+
+#### Video Preview Trim Integration
+```typescript
+// VideoPreview respects clip trim bounds
+const VideoPreview = () => {
+  // When video loads, seek to inPoint if trimmed
+  useEffect(() => {
+    if (video && currentClip && currentClip.inPoint > 0) {
+      video.currentTime = currentClip.inPoint;
+    }
+  }, [currentClip]);
+  
+  // Map timeline position to video time (accounting for inPoint)
+  const videoTime = timelinePositionWithinClip + currentClip.inPoint;
+  
+  // Detect end of trimmed content (use local time, not absolute)
+  const localTime = video.currentTime - currentClip.inPoint;
+  const trimmedDuration = getTrimmedDuration(currentClip);
+  if (localTime >= trimmedDuration - 0.1) {
+    handleClipEnd();
+  }
+  
+  // Auto-play next clip: seek to inPoint before playing
+  if (nextClip && nextClip.inPoint > 0) {
+    video.currentTime = nextClip.inPoint;
+  }
+  video.play();
+};
+```
+
+#### Timeline Sequence with Trim
+```typescript
+// Build clip sequence using trimmed durations
+const buildClipSequence = (clips: VideoClip[]) => {
+  let currentTime = 0;
+  const items = clips.map(clip => {
+    const trimmedDuration = getTrimmedDuration(clip);
+    const item = {
+      clip,
+      startTime: currentTime,
+      endTime: currentTime + trimmedDuration,
+      duration: trimmedDuration
+    };
+    currentTime += trimmedDuration;
+    return item;
+  });
+  return { items, totalDuration: currentTime };
+};
+```
+
+### 7. Project Persistence Patterns
+
+#### Project Data Structure
+```typescript
+interface ProjectData {
+  version: string;
+  createdAt: string;
+  lastModified: string;
+  projectName: string;
+  filePath: string | null;
+  clips: VideoClip[];  // Includes inPoint/outPoint
+  timeline: {
+    playheadPosition: number;
+    zoomLevel: number;
+    totalDuration: number;
+    scrollPosition: number;
+  };
+  settings: {
+    autoSaveInterval: number;
+    recentProjects: string[];
+  };
+}
+```
+
+#### Auto-Save Manager
+```typescript
+class AutoSaveManager {
+  private intervalId: NodeJS.Timeout | null = null;
+  private isSaving: boolean = false;
+  
+  start(interval: number, onSave: () => Promise<void>) {
+    this.intervalId = setInterval(async () => {
+      if (this.isSaving) return;
+      this.isSaving = true;
+      try {
+        await onSave();
+      } catch (error) {
+        // Retry logic with exponential backoff
+      } finally {
+        this.isSaving = false;
+      }
+    }, interval);
+  }
+  
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+}
+```
+
+#### FFmpeg Security Pattern
+```typescript
+// MAIN PROCESS (src/main.ts)
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import ffprobeInstaller from '@ffprobe-installer/ffprobe';
+
+// Set paths in main process
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ffmpeg.setFfprobePath(ffprobeInstaller.path);
+
+// Video processing functions in main process
+const extractVideoMetadata = async (filePath: string) => {
+  // FFmpeg operations here
+};
+
+// RENDERER PROCESS (src/utils/videoUtils.ts)
+// Only browser-safe utilities
+export const getTrimmedDuration = (clip: VideoClip) => {
+  return clip.outPoint - clip.inPoint;
+};
+
+export const validateTrimPoints = (clip: VideoClip) => {
+  // Pure JavaScript validation, no Node.js deps
+};
+```
 
 ## Component Relationships
 

@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useReducer, ReactNode, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useMemo, useCallback, useEffect, useRef } from 'react';
 import { VideoClip } from '../types/ipc';
 import { buildClipSequence, mapTimelineToClip, ClipSequence, TimelinePosition } from '../utils/timelineSequence';
+import { useProject } from './ProjectContext';
 
 // State interface
 interface MediaLibraryState {
@@ -21,7 +22,9 @@ type MediaLibraryAction =
   | { type: 'SELECT_CLIP'; payload: string | null }
   | { type: 'SET_CURRENT_PLAYING_CLIP'; payload: string | null }
   | { type: 'CLEAR_CLIPS' }
-  | { type: 'UPDATE_CLIP'; payload: VideoClip };
+  | { type: 'UPDATE_CLIP'; payload: VideoClip }
+  | { type: 'UPDATE_CLIP_TRIM'; payload: { clipId: string; inPoint: number; outPoint: number } }
+  | { type: 'LOAD_PROJECT_CLIPS'; payload: VideoClip[] };
 
 // Initial state
 const initialState: MediaLibraryState = {
@@ -93,6 +96,28 @@ function mediaLibraryReducer(state: MediaLibraryState, action: MediaLibraryActio
         ),
       };
     
+    case 'UPDATE_CLIP_TRIM':
+      return {
+        ...state,
+        clips: state.clips.map(clip => 
+          clip.id === action.payload.clipId 
+            ? { 
+                ...clip, 
+                inPoint: action.payload.inPoint, 
+                outPoint: action.payload.outPoint 
+              }
+            : clip
+        ),
+      };
+    
+    case 'LOAD_PROJECT_CLIPS':
+      return {
+        ...state,
+        clips: action.payload,
+        isLoading: false,
+        error: null,
+      };
+    
     default:
       return state;
   }
@@ -108,6 +133,8 @@ interface MediaLibraryContextType {
   setCurrentPlayingClip: (clipId: string | null) => void;
   clearClips: () => void;
   updateClip: (clip: VideoClip) => void;
+  updateClipTrim: (clipId: string, inPoint: number, outPoint: number) => void;
+  loadProjectClips: (clips: VideoClip[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   getClipById: (clipId: string) => VideoClip | undefined;
@@ -130,6 +157,8 @@ interface MediaLibraryProviderProps {
 
 export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
   const [state, dispatch] = useReducer(mediaLibraryReducer, initialState);
+  const { state: projectState, updateProject } = useProject();
+  const isUpdatingFromProject = useRef(false);
 
   // Action creators
   const addClip = (clip: VideoClip) => {
@@ -149,6 +178,11 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
   };
 
   const setCurrentPlayingClip = (clipId: string | null) => {
+    console.log('[VIDEO_SYNC] MediaLibrary: setCurrentPlayingClip called', {
+      newClipId: clipId,
+      currentClipId: state.currentPlayingClipId,
+      selectedClipId: state.selectedClipId
+    });
     dispatch({ type: 'SET_CURRENT_PLAYING_CLIP', payload: clipId });
   };
 
@@ -159,6 +193,35 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
   const updateClip = (clip: VideoClip) => {
     dispatch({ type: 'UPDATE_CLIP', payload: clip });
   };
+
+  const updateClipTrim = (clipId: string, inPoint: number, outPoint: number) => {
+    dispatch({ type: 'UPDATE_CLIP_TRIM', payload: { clipId, inPoint, outPoint } });
+  };
+
+  const loadProjectClips = (clips: VideoClip[]) => {
+    dispatch({ type: 'LOAD_PROJECT_CLIPS', payload: clips });
+  };
+
+  // Sync clips with project when project changes
+  useEffect(() => {
+    if (projectState.currentProject) {
+      isUpdatingFromProject.current = true;
+      loadProjectClips(projectState.currentProject.clips);
+      // Reset the flag after a short delay to allow the state to update
+      setTimeout(() => {
+        isUpdatingFromProject.current = false;
+      }, 0);
+    } else {
+      clearClips();
+    }
+  }, [projectState.currentProject]);
+
+  // Update project when clips change (but not when updating from project)
+  useEffect(() => {
+    if (projectState.currentProject && !isUpdatingFromProject.current) {
+      updateProject({ clips: state.clips });
+    }
+  }, [state.clips, projectState.currentProject, updateProject]);
 
   const setLoading = (loading: boolean) => {
     dispatch({ type: 'SET_LOADING', payload: loading });
@@ -209,6 +272,8 @@ export function MediaLibraryProvider({ children }: MediaLibraryProviderProps) {
     setCurrentPlayingClip,
     clearClips,
     updateClip,
+    updateClipTrim,
+    loadProjectClips,
     setLoading,
     setError,
     getClipById,

@@ -1,6 +1,7 @@
 // Timeline calculation utilities
 
 import { TimelineState, ClipPosition } from '../types/timeline';
+import { VideoClip } from '../types/ipc';
 
 /**
  * Convert time in seconds to pixel position on timeline
@@ -194,4 +195,102 @@ export function getNextSnapPosition(
   return Math.abs(time - currentSnap) < Math.abs(time - nextSnap) 
     ? currentSnap 
     : nextSnap;
+}
+
+/**
+ * Calculate trimmed duration from clip
+ */
+export function getTrimmedDuration(clip: VideoClip): number {
+  return Math.max(0, clip.outPoint - clip.inPoint);
+}
+
+/**
+ * Validate trim points for a clip
+ */
+export function validateTrimPoints(clip: VideoClip): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (clip.inPoint < 0) {
+    errors.push('inPoint cannot be negative');
+  }
+  
+  if (clip.outPoint <= clip.inPoint) {
+    errors.push('outPoint must be greater than inPoint');
+  }
+  
+  if (clip.outPoint > clip.duration) {
+    errors.push('outPoint cannot exceed original duration');
+  }
+  
+  const trimmedDuration = getTrimmedDuration(clip);
+  if (trimmedDuration < 1) {
+    errors.push('Trimmed duration must be at least 1 second');
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Calculate trim handle positions for a clip
+ */
+export function calculateTrimHandlePositions(
+  clip: VideoClip,
+  clipPosition: ClipPosition,
+  pixelsPerSecond: number
+): { startHandle: number; endHandle: number } {
+  // Trim handles are at the edges of the visible (trimmed) clip
+  // Start handle is at the left edge (position 0)
+  // End handle is at the right edge (clipPosition.width)
+  
+  return {
+    startHandle: 0,                  // Left edge of visible clip
+    endHandle: clipPosition.width    // Right edge of visible clip
+  };
+}
+
+/**
+ * Convert trim handle position to time
+ */
+export function trimHandlePositionToTime(
+  position: number,
+  clipStartTime: number,
+  pixelsPerSecond: number
+): number {
+  const relativeTime = pixelsToTime(position, pixelsPerSecond);
+  return clipStartTime + relativeTime;
+}
+
+/**
+ * Apply trim constraints to a time value
+ */
+export function applyTrimConstraints(
+  time: number,
+  clip: VideoClip,
+  handleType: 'start' | 'end'
+): { time: number; isValid: boolean; violation: string | null } {
+  let constrainedTime = time;
+  let violation: string | null = null;
+  
+  if (handleType === 'start') {
+    // Start handle constraints: can't go below 0 or above (outPoint - 1)
+    constrainedTime = Math.max(0, Math.min(constrainedTime, clip.outPoint - 1));
+    if (constrainedTime >= clip.outPoint - 1) {
+      violation = 'Start point must be at least 1 second before end point';
+    }
+  } else {
+    // End handle constraints: can't go below (inPoint + 1) or above clip duration
+    constrainedTime = Math.max(clip.inPoint + 1, Math.min(constrainedTime, clip.duration));
+    if (constrainedTime <= clip.inPoint + 1) {
+      violation = 'End point must be at least 1 second after start point';
+    }
+  }
+  
+  return {
+    time: constrainedTime,
+    isValid: violation === null,
+    violation
+  };
 }

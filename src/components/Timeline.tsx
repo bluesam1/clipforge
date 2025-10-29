@@ -81,6 +81,23 @@ const Timeline: React.FC<TimelineProps> = ({
   // Timeline position changes are handled internally
 
   const handleClipClick = (clip: VideoClip) => {
+    console.log('[VIDEO_SYNC] Clip clicked:', {
+      clipId: clip.id,
+      fileName: clip.fileName,
+      action: 'Setting both selectedClipId and currentPlayingClipId'
+    });
+    
+    // Select the clip in the media library (for editing/trimming)
+    mediaLibrary.selectClip(clip.id);
+    // Also set as the current playing clip for preview
+    mediaLibrary.setCurrentPlayingClip(clip.id);
+    
+    console.log('[VIDEO_SYNC] After setting:', {
+      selectedClipId: mediaState.selectedClipId,
+      currentPlayingClipId: mediaState.currentPlayingClipId
+    });
+    
+    // Also notify parent component
     onClipSelect?.(clip);
   };
 
@@ -94,8 +111,9 @@ const Timeline: React.FC<TimelineProps> = ({
   };
 
   const handleClipRemove = (clip: VideoClip) => {
-    // TODO: Implement clip removal
     console.log('Remove clip:', clip.fileName);
+    // Remove the clip from the media library
+    mediaLibrary.removeClip(clip.id);
   };
 
   const handlePlayheadDrag = (deltaX: number) => {
@@ -114,9 +132,38 @@ const Timeline: React.FC<TimelineProps> = ({
 
 
   const handleTimelineContainerClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] Timeline container clicked at (${event.clientX}, ${event.clientY})`);
+    const target = event.target as HTMLElement;
+    const clickedOnClip = target.closest('[data-clip-id]');
+    
+    // Calculate the clicked position BEFORE calling handleTimelineClick
+    const rect = event.currentTarget.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const clickedTime = pixelsToTime(clickX);
+    
+    console.log('[VIDEO_SYNC] Timeline clicked:', {
+      clickedOnClip: !!clickedOnClip,
+      currentSelectedClipId: selectedClipId,
+      currentPlayingClipId: mediaState.currentPlayingClipId,
+      clickedTime: clickedTime.toFixed(2)
+    });
+    
+    // Only deselect if clicking on empty timeline area (not on a clip)
+    if (!clickedOnClip && selectedClipId) {
+      console.log('[VIDEO_SYNC] Clicking empty space - deselecting clip');
+      mediaLibrary.selectClip(null);
+    }
+    
+    // Always allow timeline click to move playhead
     handleTimelineClick(event);
+    
+    // Get the clip at the CLICKED position (not the old playhead position)
+    const clipAtPosition = mediaLibrary.getClipAtTime(clickedTime);
+    
+    console.log('[VIDEO_SYNC] After playhead move:', {
+      clickedTime: clickedTime.toFixed(2),
+      clipAtPosition: clipAtPosition.clipId,
+      shouldUpdatePlayingClip: true
+    });
   };
 
   const handleTimelineKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -128,7 +175,7 @@ const Timeline: React.FC<TimelineProps> = ({
   const getClipPositions = () => {
     return clipSequence.items.map((item) => {
       const x = timeToPixels(item.startTime) - timelineState.scrollPosition;
-      const width = timeToPixels(item.clip.duration);
+      const width = timeToPixels(item.endTime - item.startTime);
       const position = { x, width, startTime: item.startTime };
       return { clip: item.clip, position };
     });
@@ -228,6 +275,8 @@ const Timeline: React.FC<TimelineProps> = ({
                   clipHeight: config.clipHeight,
                   minWidth: 20,
                 }}
+                pixelsPerSecond={timelineState.pixelsPerSecond}
+                showTrimHandles={true}
               />
             ))}
           </div>

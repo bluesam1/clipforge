@@ -1,6 +1,9 @@
 import React from 'react';
 import { VideoClip } from '../types/ipc';
+import { ClipPosition } from '../types/timeline';
 import { formatTime } from '../utils/timelineUtils';
+import { useMediaLibrary } from '../contexts/MediaLibraryContext';
+import TrimEditor from './TrimEditor';
 
 interface ClipBlockProps {
   clip: VideoClip;
@@ -20,6 +23,8 @@ interface ClipBlockProps {
     clipHeight: number;
     minWidth: number;
   };
+  pixelsPerSecond: number;
+  showTrimHandles?: boolean;
 }
 
 const ClipBlock: React.FC<ClipBlockProps> = ({
@@ -33,12 +38,17 @@ const ClipBlock: React.FC<ClipBlockProps> = ({
   onDoubleClick,
   onRemove,
   config,
+  pixelsPerSecond,
+  showTrimHandles = true,
 }) => {
+  const { updateClipTrim } = useMediaLibrary();
   if (!isVisible) return null;
 
   const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    // Select clip for editing/trimming, but don't stop propagation
+    // This allows the timeline click to also fire and move the playhead
     onSelect(clip);
+    // Don't use e.stopPropagation() - let the event bubble to timeline
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
@@ -56,7 +66,12 @@ const ClipBlock: React.FC<ClipBlockProps> = ({
 
   const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
+    console.log('Remove button clicked for clip:', clip.fileName);
     onRemove?.(clip);
+  };
+
+  const handleTrimChange = (clipId: string, inPoint: number, outPoint: number) => {
+    updateClipTrim(clipId, inPoint, outPoint);
   };
 
   const getClipColor = () => {
@@ -77,6 +92,7 @@ const ClipBlock: React.FC<ClipBlockProps> = ({
 
   return (
     <div
+      data-clip-id={clip.id}
       className={`absolute top-0 h-full rounded cursor-pointer transition-all duration-200 flex items-center px-2 group ${getClipColor()} ${getTextColor()} ${getShadowClass()}`}
       style={{
         left: `${position.x}px`,
@@ -104,7 +120,7 @@ const ClipBlock: React.FC<ClipBlockProps> = ({
       {/* Remove Button */}
       {onRemove && (
         <button
-          className="ml-2 w-4 h-4 bg-black bg-opacity-20 hover:bg-opacity-40 rounded-full flex items-center justify-center text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          className="ml-2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold opacity-0 group-hover:opacity-100 transition-all duration-200 relative z-50 shadow-md"
           onClick={handleRemove}
           title={`Remove ${clip.fileName}`}
         >
@@ -120,6 +136,26 @@ const ClipBlock: React.FC<ClipBlockProps> = ({
       {/* Hover Indicator */}
       {isHovered && !isSelected && (
         <div className="absolute -top-0.5 -left-0.5 w-1.5 h-1.5 bg-blue-500 rounded-full" />
+      )}
+
+      {/* Trim Editor */}
+      {isSelected && showTrimHandles && (
+        <TrimEditor
+          clip={clip}
+          clipPosition={{
+            clipId: clip.id,
+            startTime: position.startTime,
+            endTime: position.startTime + clip.duration,
+            duration: clip.duration,
+            x: position.x,
+            width: position.width,
+            isSelected,
+            isHovered,
+          }}
+          pixelsPerSecond={pixelsPerSecond}
+          isVisible={isVisible}
+          onTrimChange={handleTrimChange}
+        />
       )}
     </div>
   );

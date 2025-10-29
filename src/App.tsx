@@ -3,21 +3,24 @@ import './index.css';
 import { ImportButton, Timeline, VideoPreview, ExportButton } from './components';
 import { MediaLibraryProvider, useMediaLibrary } from './contexts/MediaLibraryContext';
 import { TimelineProvider } from './contexts/TimelineContext';
+import { ProjectProvider, useProject } from './contexts/ProjectContext';
+import { ProjectSelectionDialog } from './components/ProjectSelectionDialog';
 import { VideoClip } from './types/ipc';
 
 const AppContent: React.FC = () => {
   const [ipcStatus, setIpcStatus] = useState<string>('Testing...');
   const [ipcTestResult, setIpcTestResult] = useState<string>('');
-  const [videoSrc, setVideoSrc] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [showProjectDialog, setShowProjectDialog] = useState<boolean>(false);
   
   const { state, addClips, setError, selectClip } = useMediaLibrary();
   const { error } = state;
+  const { isProjectLoaded, getProjectName } = useProject();
 
   // Test IPC communication on component mount
   useEffect(() => {
@@ -39,15 +42,21 @@ const AppContent: React.FC = () => {
     testIPC();
   }, []);
 
+  // Show project selection dialog if no project is loaded
+  useEffect(() => {
+    if (!isProjectLoaded()) {
+      setShowProjectDialog(true);
+    }
+  }, [isProjectLoaded]);
+
   const handleImport = () => {
     console.log('Import button clicked');
     // Import functionality is now handled by ImportButton component
   };
 
   const handleClipSelect = (clip: VideoClip) => {
-    selectClip(clip.id);
-    setVideoSrc(clip.filePath);
-    setDuration(clip.duration);
+    // Clip selection is now handled directly by Timeline component
+    // through mediaLibrary.selectClip() and mediaLibrary.setCurrentPlayingClip()
     console.log('Selected clip:', clip.fileName);
   };
 
@@ -126,18 +135,29 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div 
-      className={`bg-white rounded-xl shadow-strong p-4 sm:p-6 lg:p-8 max-w-6xl w-full min-h-[600px] flex flex-col transition-all duration-300 ${
-        isDragOver ? 'drag-over' : ''
-      }`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      <header className="text-center mb-6 sm:mb-8">
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2 sm:mb-4">🎬 ClipForge</h1>
-        <p className="text-base sm:text-lg text-gray-600">Professional Video Editing Made Simple</p>
-      </header>
+    <>
+      <ProjectSelectionDialog 
+        isOpen={showProjectDialog} 
+        onClose={() => setShowProjectDialog(false)} 
+      />
+      
+      <div 
+        className={`bg-white rounded-xl shadow-strong p-4 sm:p-6 lg:p-8 max-w-6xl w-full min-h-[600px] flex flex-col transition-all duration-300 ${
+          isDragOver ? 'drag-over' : ''
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <header className="text-center mb-6 sm:mb-8">
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2 sm:mb-4">🎬 ClipForge</h1>
+          <p className="text-base sm:text-lg text-gray-600">Professional Video Editing Made Simple</p>
+          {isProjectLoaded() && (
+            <div className="mt-2 text-sm text-gray-500">
+              Project: <span className="font-medium">{getProjectName()}</span>
+            </div>
+          )}
+        </header>
       
       <main className="flex-1 flex flex-col">
         <div className="flex flex-col sm:flex-row gap-4 mb-6 sm:mb-8 justify-center">
@@ -165,7 +185,6 @@ const AppContent: React.FC = () => {
         
         <div className="mb-8">
           <VideoPreview
-            videoSrc={videoSrc}
             onPlayStateChange={(playing) => {
               setIsPlaying(playing);
             }}
@@ -192,17 +211,20 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </>
   );
 };
 
 const App: React.FC = () => {
   return (
-    <MediaLibraryProvider>
-      <TimelineProvider>
-        <AppContent />
-      </TimelineProvider>
-    </MediaLibraryProvider>
+    <ProjectProvider>
+      <MediaLibraryProvider>
+        <TimelineProvider>
+          <AppContent />
+        </TimelineProvider>
+      </MediaLibraryProvider>
+    </ProjectProvider>
   );
 };
 
