@@ -2,6 +2,7 @@
 // Provides functions for mapping timeline time to clip positions and managing clip sequences
 
 import { VideoClip } from '../types/ipc';
+import { getTrimmedDuration } from './videoUtils';
 
 // Timeline position interface
 export interface TimelinePosition {
@@ -60,7 +61,9 @@ export function buildClipSequence(clips: VideoClip[]): ClipSequence {
   // Build sequence items
   sortedClips.forEach((clip, index) => {
     const startTime = currentTime;
-    const endTime = currentTime + clip.duration;
+    // Use trimmed duration for sequence building
+    const trimmedDuration = getTrimmedDuration(clip);
+    const endTime = currentTime + trimmedDuration;
     
     items.push({
       clip,

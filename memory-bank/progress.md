@@ -75,13 +75,16 @@
 - ✅ **Timeline Click Responsiveness**: Fixed timeline click responsiveness by simplifying interaction logic
 - ✅ **Video Preloading**: Added preloading for adjacent clips to improve transition smoothness
 
-### Phase 4: Video Trimming & Editing (Next Priority)
-- **Trim Handles**: Visual trim handles on clip blocks
-- **Clip Splitting**: Split clips at playhead position
-- **Clip Merging**: Merge adjacent clips
-- **Drag & Drop Reordering**: Reorder clips on timeline
-- **Undo/Redo**: Edit operation history
-- **Keyboard Shortcuts**: Trim and edit shortcuts
+### Phase 4: Video Trimming & Editing (100% Complete) ✅
+- ✅ **Project Persistence**: Save/load system with .clipforge format and auto-save
+- ✅ **Trim Handles**: Draggable visual trim handles on clip blocks
+- ✅ **Trim State Management**: inPoint/outPoint tracking with validation
+- ✅ **Timeline Integration**: Visual representation of trimmed clips with correct widths
+- ✅ **Video Preview Updates**: Real-time preview reflecting trim operations
+- ✅ **Auto-Play Fixes**: Correctly seeking to inPoint before playing next clip
+- ✅ **Manual End Detection**: Using local time for accurate clip end detection
+- ✅ **Clip State Separation**: Independent selected and playing clip states
+- ✅ **FFmpeg Security**: All FFmpeg operations moved to main process
 
 ### Phase 5: Video Export
 - **Export Dialog**: File save dialog for output location
@@ -113,18 +116,28 @@
 - [x] **Code Cleanup**: Removed duplicate files and cleaned up artifacts
 - [x] **Timeline View Implementation**: All 5 high-level + 25 subtasks completed (03-timeline-view-prd.md)
 
-### Next Tasks (Video Trimming & Editing)
+### Next Tasks
 - [x] 3.5.0 Implement multi-clip playback and timeline-preview sync (04-video-preview-prd.md) ✅
-- [ ] 4.0 Implement video trimming and editing functionality (05-trim-editing-prd.md)
+- [x] 4.0 Implement video trimming and editing functionality (05-trim-editing-prd.md) ✅
+  - [x] 4.1 Project persistence system ✅
+  - [x] 4.2 Trim handle implementation ✅
+  - [x] 4.3 Trim state management ✅
+  - [x] 4.4 Timeline integration ✅
+  - [x] 4.5 Video preview updates ✅
+  - [x] 4.6 Auto-play fixes for trimmed clips ✅
+  - [x] 4.7 Manual end detection correction ✅
 - [ ] 5.0 Add video export functionality (06-video-export-prd.md)
 - [ ] 6.0 Implement advanced timeline features
 - [ ] 7.0 Add cross-platform testing and polish
 
 ## Known Issues
-- **Keyboard Shortcuts**: Need comprehensive keyboard shortcuts for playback controls
+- **Keyboard Shortcuts**: Need comprehensive keyboard shortcuts for trim and playback controls
 - **Performance**: Video loading and switching could be optimized for large files
-- **Timeline Click Responsiveness**: May still need fine-tuning for optimal click response
-- **Ready**: System is stable and ready for video trimming and editing features
+- **Clip Splitting**: Clip splitting at playhead not yet implemented (deferred from Phase 4)
+- **Clip Merging**: Clip merging functionality not yet implemented (deferred from Phase 4)
+- **Drag & Drop Reordering**: Clip reordering not yet implemented (deferred from Phase 4)
+- **Undo/Redo**: Edit operation history not yet implemented (deferred from Phase 4)
+- **Ready**: System is stable and ready for video export functionality
 
 ## Performance Metrics
 - **Launch Time**: < 2 seconds (target: < 5 seconds) ✅
@@ -166,6 +179,6 @@
 - ✅ All video import requirements met
 
 ## Next Milestone
-**Target**: Implement video trimming and editing functionality
+**Target**: Implement video export functionality
 **Timeline**: Next development session
-**Success Criteria**: Users can trim clips with visual handles, split clips at playhead position, merge adjacent clips, and reorder clips via drag-and-drop
+**Success Criteria**: Users can export their edited timeline to MP4 with FFmpeg, respecting all trim operations, with real-time progress tracking and quality options
