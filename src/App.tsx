@@ -6,6 +6,8 @@ import { TimelineProvider } from './contexts/TimelineContext';
 import { ProjectProvider, useProject } from './contexts/ProjectContext';
 import { ProjectSelectionDialog } from './components/ProjectSelectionDialog';
 import { VideoClip } from './types/ipc';
+import type { ExportOptions, ExportRequest } from './types/export';
+import { calculateTotalExportDuration } from './utils/videoUtils';
 
 const AppContent: React.FC = () => {
   const [ipcStatus, setIpcStatus] = useState<string>('Testing...');
@@ -13,14 +15,20 @@ const AppContent: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [exportProgress, setExportProgress] = useState<number>(0);
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
   const [showProjectDialog, setShowProjectDialog] = useState<boolean>(false);
   
   const { state, addClips, setError, selectClip } = useMediaLibrary();
   const { error } = state;
-  const { isProjectLoaded, getProjectName } = useProject();
+  const { 
+    state: projectState, 
+    isProjectLoaded, 
+    getProjectName, 
+    setExportStatus, 
+    setExportProgress, 
+    setExportResult, 
+    setExportError 
+  } = useProject();
 
   // Test IPC communication on component mount
   useEffect(() => {
@@ -41,6 +49,27 @@ const AppContent: React.FC = () => {
 
     testIPC();
   }, []);
+
+  // Set up export event listeners
+  useEffect(() => {
+    const removeProgressListener = window.electronAPI.onExportProgressUpdate((progress) => {
+      setExportProgress(progress);
+    });
+
+    const removeCompleteListener = window.electronAPI.onExportComplete((result) => {
+      setExportResult(result);
+    });
+
+    const removeErrorListener = window.electronAPI.onExportError((result) => {
+      setExportError(result.error || 'Export failed');
+    });
+
+    return () => {
+      removeProgressListener();
+      removeCompleteListener();
+      removeErrorListener();
+    };
+  }, [setExportProgress, setExportResult, setExportError]);
 
   // Show project selection dialog if no project is loaded
   useEffect(() => {
@@ -116,23 +145,34 @@ const AppContent: React.FC = () => {
     setIsPlaying(false);
   };
 
-  const handleExport = () => {
-    console.log('Export button clicked');
-    setIsExporting(true);
-    setExportProgress(0);
-    
-    // Simulate export progress
-    const interval = setInterval(() => {
-      setExportProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsExporting(false);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 500);
-  };
+  const handleExport = useCallback(async (options: ExportOptions) => {
+    try {
+      console.log('Export started with options:', options);
+      setExportStatus('exporting');
+      
+      // Build export request
+      const exportRequest: ExportRequest = {
+        clips: state.clips.map(clip => ({
+          filePath: clip.filePath,
+          inPoint: clip.inPoint,
+          outPoint: clip.outPoint,
+          duration: clip.duration
+        })),
+        outputPath: options.outputPath,
+        options
+      };
+      
+      // Call IPC to start export
+      const result = await window.electronAPI.exportVideo(exportRequest);
+      
+      if (!result.success) {
+        setExportError(result.error || 'Export failed');
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      setExportError(error instanceof Error ? error.message : 'Export failed');
+    }
+  }, [state.clips, setExportStatus, setExportError]);
 
   return (
     <>
@@ -164,8 +204,10 @@ const AppContent: React.FC = () => {
           <ImportButton onImport={handleImport} />
           <ExportButton 
             onExport={handleExport}
-            isExporting={isExporting}
-            progress={exportProgress}
+            exportStatus={projectState.exportState.status}
+            exportProgress={projectState.exportState.progress}
+            totalDuration={calculateTotalExportDuration(state.clips)}
+            disabled={state.clips.length === 0}
           />
         </div>
         

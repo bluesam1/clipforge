@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { BatchImportResult, VideoMetadata } from './types/ipc';
+import type { ExportRequest, ExportResult, ExportProgress } from './types/export';
 
 // Define the API that will be exposed to the renderer process
 const electronAPI = {
@@ -11,18 +12,28 @@ const electronAPI = {
   importVideoDragDrop: (filePaths: string[]): Promise<BatchImportResult> => ipcRenderer.invoke('video-import-dragdrop', filePaths),
   getVideoMetadata: (filePath: string): Promise<VideoMetadata> => ipcRenderer.invoke('video-get-metadata', filePath),
   
-  // Legacy video features
-  importVideo: (filePath: string) => ipcRenderer.invoke('import-video', filePath),
-  exportVideo: (data: unknown) => ipcRenderer.invoke('export-video', data),
-  getExportProgress: () => ipcRenderer.invoke('export-progress'),
+  // Export functionality
+  exportVideo: (request: ExportRequest): Promise<ExportResult> => ipcRenderer.invoke('export-video', request),
+  cancelExport: (): Promise<{ success: boolean; message: string }> => ipcRenderer.invoke('export-cancel'),
+  showSaveDialog: (options: any): Promise<{ canceled: boolean; filePath?: string }> => ipcRenderer.invoke('dialog:showSaveDialog', options),
   
-  // Event listeners for progress updates
-  onExportProgress: (callback: (progress: number) => void) => {
-    ipcRenderer.on('export-progress-update', (_, progress) => callback(progress));
+  // Event listeners for export progress and completion
+  onExportProgressUpdate: (callback: (progress: ExportProgress) => void) => {
+    const listener = (_: any, progress: ExportProgress) => callback(progress);
+    ipcRenderer.on('export-progress-update', listener);
+    return () => ipcRenderer.removeListener('export-progress-update', listener);
   },
   
-  onExportComplete: (callback: (result: unknown) => void) => {
-    ipcRenderer.on('export-complete', (_, result) => callback(result));
+  onExportComplete: (callback: (result: ExportResult) => void) => {
+    const listener = (_: any, result: ExportResult) => callback(result);
+    ipcRenderer.on('export-complete', listener);
+    return () => ipcRenderer.removeListener('export-complete', listener);
+  },
+  
+  onExportError: (callback: (result: ExportResult) => void) => {
+    const listener = (_: any, result: ExportResult) => callback(result);
+    ipcRenderer.on('export-error', listener);
+    return () => ipcRenderer.removeListener('export-error', listener);
   },
   
   // Remove listeners

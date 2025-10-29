@@ -38,3 +38,34 @@ export function validateTrimPoints(clip: VideoClip): { isValid: boolean; errors:
 
 // Supported video formats
 export const SUPPORTED_FORMATS = ['.mp4', '.mov', '.MP4', '.MOV'];
+
+// Export validation functions
+export function validateExportReadiness(clips: VideoClip[]): { canExport: boolean; message: string } {
+  if (!clips || clips.length === 0) {
+    return {
+      canExport: false,
+      message: 'No clips to export. Please import at least one video.'
+    };
+  }
+  
+  // Check if all clips have valid trim points
+  for (const clip of clips) {
+    const validation = validateTrimPoints(clip);
+    if (!validation.isValid) {
+      return {
+        canExport: false,
+        message: `Invalid clip "${clip.fileName}": ${validation.errors.join(', ')}`
+      };
+    }
+  }
+  
+  return {
+    canExport: true,
+    message: 'Ready to export'
+  };
+}
+
+// Calculate total export duration
+export function calculateTotalExportDuration(clips: VideoClip[]): number {
+  return clips.reduce((total, clip) => total + getTrimmedDuration(clip), 0);
+}
