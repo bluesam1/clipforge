@@ -28,6 +28,12 @@ export function useTimeline() {
       timelineContext.config.snapToGrid
     );
     
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] User clicked timeline - setting playhead to ${snappedTime.toFixed(2)}s (clicked at ${time.toFixed(2)}s)`);
+    
+    // Set a flag to prevent timeupdate interference (this will be handled by VideoPreview)
+    // We can't access userInteractingRef directly here, so we'll rely on VideoPreview's handling
+    
     timelineContext.setPlayheadPosition(snappedTime);
   }, [timelineContext]);
 
@@ -58,6 +64,9 @@ export function useTimeline() {
     };
     
     const handleMouseUp = () => {
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] User finished dragging playhead - final position: ${timelineContext.state.playheadPosition.toFixed(2)}s`);
+      
       isDraggingRef.current = false;
       timelineContext.updatePlayhead({ isDragging: false });
       document.removeEventListener('mousemove', handleMouseMove);

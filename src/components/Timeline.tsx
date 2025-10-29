@@ -15,7 +15,8 @@ interface TimelineProps {
 const Timeline: React.FC<TimelineProps> = ({ 
   onClipSelect
 }) => {
-  const { state: mediaState } = useMediaLibrary();
+  const mediaLibrary = useMediaLibrary();
+  const { state: mediaState, getClipSequence } = mediaLibrary;
   const { clips, selectedClipId } = mediaState;
   const timelineRef = useRef<HTMLDivElement>(null);
   const [timelineWidth, setTimelineWidth] = useState(800);
@@ -42,8 +43,20 @@ const Timeline: React.FC<TimelineProps> = ({
     zoomToFit,
   } = useTimeline();
 
-  // Calculate total duration from clips
-  const totalDuration = clips.reduce((total, clip) => total + clip.duration, 0);
+  // Get total duration from clip sequence
+  const clipSequence = React.useMemo(() => {
+    if (!getClipSequence) {
+      return { totalDuration: 0, items: [], gaps: [], isEmpty: true };
+    }
+    try {
+      return getClipSequence();
+    } catch (error) {
+      console.error('Error calling getClipSequence:', error);
+      return { totalDuration: 0, items: [], gaps: [], isEmpty: true };
+    }
+  }, [getClipSequence, clips]);
+  
+  const totalDuration = clipSequence.totalDuration;
 
   // Update timeline width when container resizes
   useEffect(() => {
@@ -107,15 +120,13 @@ const Timeline: React.FC<TimelineProps> = ({
     handleKeyDown(event);
   };
 
-  // Calculate clip positions for timeline display
+  // Calculate clip positions for timeline display using clip sequence
   const getClipPositions = () => {
-    let currentTime = 0;
-    return clips.map((clip) => {
-      const x = timeToPixels(currentTime) - timelineState.scrollPosition;
-      const width = timeToPixels(clip.duration);
-      const position = { x, width, startTime: currentTime };
-      currentTime += clip.duration;
-      return { clip, position };
+    return clipSequence.items.map((item) => {
+      const x = timeToPixels(item.startTime) - timelineState.scrollPosition;
+      const width = timeToPixels(item.clip.duration);
+      const position = { x, width, startTime: item.startTime };
+      return { clip: item.clip, position };
     });
   };
 
